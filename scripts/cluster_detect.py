@@ -310,7 +310,9 @@ def detect_sync_filing(seed: str) -> list[Edge]:
     edges: list[Edge] = []
 
     # Get seed's issues
-    seed_issues = _search("issues", f"author:{seed} is:issue", per_page=50)
+    seed_issues = _search(
+        "issues", f"author:{seed} is:issue", per_page=100, max_results=100
+    )
     if not seed_issues:
         return edges
 

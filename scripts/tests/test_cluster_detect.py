@@ -193,26 +193,32 @@ class TestDetectorCallBounds:
                         for i in range(per_page)
                     ]
                 }
-            # The seed's own issues: two distinct repos, two issues each.
+            # The seed's own issues: a full page every time, spread across more
+            # repos than detect_sync_filing actually uses (it only looks at the
+            # first 10). Before max_results was added to this call site, an
+            # account with more issues than fit on one page walked every page
+            # in the 1000-result window fetching this.
             return {
                 "items": [
-                    {"repository_url": "https://api.github.com/repos/org/repo1", "created_at": "2026-01-01T00:00:00Z"},
-                    {"repository_url": "https://api.github.com/repos/org/repo1", "created_at": "2026-01-01T01:00:00Z"},
-                    {"repository_url": "https://api.github.com/repos/org/repo2", "created_at": "2026-01-02T00:00:00Z"},
-                    {"repository_url": "https://api.github.com/repos/org/repo2", "created_at": "2026-01-02T01:00:00Z"},
+                    {
+                        "repository_url": f"https://api.github.com/repos/org/repo{i % 15}",
+                        "created_at": "2026-01-01T00:00:00Z",
+                    }
+                    for i in range(per_page)
                 ]
             }
 
         with patch.object(cluster_detect, "_api", side_effect=fake_api) as mock_api:
             cluster_detect.detect_sync_filing("seed")
 
-        # Before the fix, each of the 4 (repo, issue) pairs here ran an unbounded
-        # search (per_page=20, no max_results, no time window) against a repo that
-        # always has a full page available - up to 50 pages each, ~200 calls total.
-        # With the fix (time-windowed query + max_results=20) each pair takes a
-        # single page, so total calls (1 seed-issues search + 4 repo searches) stays
-        # in the single digits.
-        assert mock_api.call_count <= 10
+        # Before either fix, the seed-issues search itself was unbounded (per_page=50,
+        # no max_results) and each of up to 30 (repo, issue) pairs below it ran its own
+        # unbounded search (per_page=20, no max_results, no time window) against a repo
+        # that always has a full page available - thousands of calls combined. With
+        # both fixes (max_results=100 on the seed-issues search, time-windowed query +
+        # max_results=20 per pair), the seed-issues search takes one call and each pair
+        # takes at most one, so the total stays near 1 + 10 repos * 3 issues = 31.
+        assert mock_api.call_count <= 35
 
 
 # ---------------------------------------------------------------------------
