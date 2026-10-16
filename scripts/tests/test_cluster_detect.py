@@ -30,8 +30,8 @@ from cluster_detect import (
 
 class TestSearchPagination:
     def test_paginates_across_multiple_pages(self):
-        """A short first page must still trigger a request for the next page,
-        not be treated as the end of the results."""
+        """A full first page must trigger a request for the next page; only a
+        short page ends the loop."""
         pages = {
             "1": {"items": [{"number": i} for i in range(100)]},
             "2": {"items": [{"number": i} for i in range(100, 150)]},
@@ -177,12 +177,15 @@ class TestDetectorCallBounds:
         assert mock_api.call_count <= 25
 
     def test_detect_sync_filing_bounds_api_calls(self):
+        repo_queries = []
+
         def fake_api(path, params=None):
             if path != "/search/issues":
                 return None
             q = params["q"]
             per_page = int(params["per_page"])
             if "repo:" in q:
+                repo_queries.append(q)
                 # A repo with far more matching issues than fit on any one page.
                 return {
                     "items": [
@@ -219,6 +222,14 @@ class TestDetectorCallBounds:
         # max_results=20 per pair), the seed-issues search takes one call and each pair
         # takes at most one, so the total stays near 1 + 10 repos * 3 issues = 31.
         assert mock_api.call_count <= 35
+
+        # The call cap alone is not the whole fix: without the 48h created: window the
+        # per-pair query still matches every issue in the repo, which is what ran into
+        # the Search API rate limit. Every per-pair query must carry the window around
+        # the 2026-01-01T00:00:00Z seed issue.
+        assert repo_queries
+        for q in repo_queries:
+            assert "created:2025-12-30T00:00:00Z..2026-01-03T00:00:00Z" in q
 
 
 # ---------------------------------------------------------------------------
